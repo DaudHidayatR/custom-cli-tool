@@ -1,0 +1,133 @@
+#!/bin/bash
+set -e  # Exit immediately if a command exits with a non-zero status
+
+#
+# Command-line interface with sub-commands.
+#
+# Usage:
+#   $COMMAND_NAME make <filename>      Create a file with template
+#   $COMMAND_NAME setup install        Run installation process
+#   $COMMAND_NAME go new <nameproject> Create a new Go project from template
+#   $COMMAND_NAME --help               Show help information
+#   $COMMAND_NAME --version            Show version information
+#
+
+# Function to handle errors
+handle_error() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+# Determine the script's directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Source common library with error handling
+if [ ! -f "$SCRIPT_DIR/lib/common.sh" ]; then
+    handle_error "common.sh not found at $SCRIPT_DIR/lib/common.sh"
+fi
+# shellcheck source=lib/common.sh
+. "$SCRIPT_DIR/lib/common.sh" || handle_error "Failed to source common.sh"
+
+# Load environment variables from .env file
+load_env_file "$SCRIPT_DIR/.env"
+
+# Source command files with error handling
+# Save original script directory path to avoid overrides
+ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
+for cmd_file in make.sh setup.sh go.sh laravel.sh; do
+    cmd_path="$ORIGINAL_SCRIPT_DIR/commands/$cmd_file"
+    if [ ! -f "$cmd_path" ]; then
+        handle_error "$cmd_file not found at $cmd_path"
+    fi
+
+    # shellcheck disable=SC1090
+    if ! . "$cmd_path"; then
+        handle_error "Failed to source $cmd_file"
+    fi
+
+    # Export required functions
+    case "$cmd_file" in
+        make.sh) export -f make_command 2>/dev/null || true ;;
+        setup.sh) export -f setup_command 2>/dev/null || true ;;
+        go.sh) export -f go_command 2>/dev/null || true ;;
+        laravel.sh) export -f laravel_command 2>/dev/null || true ;;
+    esac
+done
+
+# Main command processing
+main() {
+    cmd="${1:-}"  # Set default to empty string if $1 is not set
+    shift 1 2>/dev/null || true  # Shift to the next argument, don't error if no args
+
+    # Handle command routing
+    case "$cmd" in
+        # Help and version commands
+        --help|-h)
+            show_main_help
+            return 0
+            ;;
+
+        --version|-v)
+            show_version
+            return 0
+            ;;
+
+        # Main commands
+        make)
+            make_command "$@"
+            return $?
+            ;;
+
+        setup)
+            setup_command "$@"
+            return $?
+            ;;
+
+        go)
+            if type go_command >/dev/null 2>&1; then
+                go_command "$@"
+                return $?
+            else
+                echo "Error: go_command function not found. Check if commands/go.sh was properly sourced." >&2
+                return 1
+            fi
+            ;;
+
+        # Handle empty command
+        "")
+            log_error "No command provided."
+            show_main_help
+            return 1
+            ;;
+
+        # Handle unknown commands
+        *)
+            log_error "Unknown command: $cmd"
+            log_info "Run '$COMMAND_NAME --help' for usage information."
+            return 1
+            ;;
+    esac
+}
+
+# Define main help function in case it's not properly loaded from common.sh
+if ! type show_main_help >/dev/null 2>&1; then
+    show_main_help() {
+        cat << EOF
+Usage: $COMMAND_NAME <command> [arguments]
+
+Available commands:
+  make <filename>      Create a new file with template header
+  setup                Setup and configuration commands
+  go new <nameproject> Create a new Go project from template
+  --help, -h           Show this help message
+  --version, -v        Show version information
+
+For help on specific commands, run:
+  $COMMAND_NAME <command> --help
+EOF
+    }
+fi
+
+# Run the main function
+main "$@"
+exit $?

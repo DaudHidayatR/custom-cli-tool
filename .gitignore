@@ -1,0 +1,14 @@
+# Ignore environment variables file
+.env
+
+# Common files to ignore
+*.log
+*.tmp
+*.temp
+.DS_Store
+
+# Editor files to ignore
+.vscode/
+.idea/
+*.swp
+*.swo
